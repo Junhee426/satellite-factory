@@ -22,7 +22,8 @@ export class SimulationClient{
   const config=validate(input),key=this.key(config);
   if(this.queued){
    if(this.queued.key===key)return new Promise((resolve,reject)=>{this.queued.waiters.push({resolve,reject});});
-   this.queued.reject(superseded());this.queued=null;
+   const stale=this.queued;this.queued=null;
+   stale.reject(superseded());for(const w of stale.waiters)w.reject(superseded());
   }
   if(this.cache.has(key)){
    const result=this.cache.get(key);this.remember(key,result);return Promise.resolve(result);
