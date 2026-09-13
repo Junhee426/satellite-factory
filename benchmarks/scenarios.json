@@ -1,0 +1,5 @@
+[
+  {"name":"기본 128기","config":{}},
+  {"name":"발주 256기","config":{"demand":256}},
+  {"name":"장기 병목 256기","config":{"demand":256,"lines":1,"workers":4,"batch":1,"rework":30,"assemblyDays":30,"environmentDays":30}}
+]

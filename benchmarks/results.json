@@ -1,0 +1,52 @@
+{
+  "measuredAt": "2026-09-13T06:21:58.424571+00:00",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.39",
+  "method": "Same fixed-step algorithm and full result objects; 10 warmups and 50 calls per scenario; excludes browser rendering, worker message transfer, network and process startup.",
+  "parityScenarios": 8,
+  "javascript": {
+    "runtime": "v24.19.0",
+    "results": [
+      {
+        "name": "기본 128기",
+        "medianMs": 0.8800389999999965,
+        "p95Ms": 1.8957210000000089,
+        "runs": 50
+      },
+      {
+        "name": "발주 256기",
+        "medianMs": 0.7823115000000058,
+        "p95Ms": 3.142046000000022,
+        "runs": 50
+      },
+      {
+        "name": "장기 병목 256기",
+        "medianMs": 6.32045149999999,
+        "p95Ms": 18.216308999999967,
+        "runs": 50
+      }
+    ]
+  },
+  "python": {
+    "runtime": "3.12.14",
+    "results": [
+      {
+        "name": "기본 128기",
+        "medianMs": 2.8868614899693057,
+        "p95Ms": 3.7431800010381266,
+        "runs": 50
+      },
+      {
+        "name": "발주 256기",
+        "medianMs": 5.619437499262858,
+        "p95Ms": 6.758766001439653,
+        "runs": 50
+      },
+      {
+        "name": "장기 병목 256기",
+        "medianMs": 40.33969600277487,
+        "p95Ms": 44.068172996048816,
+        "runs": 50
+      }
+    ]
+  }
+}

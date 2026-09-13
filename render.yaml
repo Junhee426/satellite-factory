@@ -1,0 +1,20 @@
+# Render Dashboard > New > Blueprint > select this repository.
+services:
+  - type: web
+    name: satellite-factory-lab
+    runtime: static
+    buildCommand: node scripts/verify-static.mjs
+    staticPublishPath: ./dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+      - path: /*.mjs
+        name: Content-Type
+        value: text/javascript; charset=utf-8
