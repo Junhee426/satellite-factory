@@ -24,6 +24,19 @@ try{
  assert.equal(outcomes[1].reason.name,'AbortError','An obsolete queued slider input must be replaced');
  assert.deepEqual(outcomes[2].value,simulate({...BASE,demand:80}));
  assert.throws(()=>client.compute({...BASE,chambers:0}));
+ const dupBefore=workerPosts;
+ const [dup1,dup2]=await Promise.all([client.compute({...BASE,demand:96}),client.compute({...BASE,demand:96})]);
+ assert.equal(workerPosts,dupBefore+1,'Two identical concurrent requests must share a single worker round trip');
+ assert.deepEqual(dup1,dup2);
+ assert.deepEqual(dup1,simulate({...BASE,demand:96}));
+ const queuedBefore=workerPosts;
+ const active=client.compute({...BASE,demand:100});
+ const queued1=client.compute({...BASE,demand:104});
+ const queued2=client.compute({...BASE,demand:104});
+ const [activeOut,queued1Out,queued2Out]=await Promise.all([active,queued1,queued2]);
+ assert.equal(workerPosts,queuedBefore+2,'An identical repeat of the still-waiting request must not requeue a second worker call');
+ assert.deepEqual(queued1Out,queued2Out);
+ assert.equal(activeOut.config.demand,100);assert.equal(queued1Out.config.demand,104);
 }finally{client.dispose();}
 await assert.rejects(client.compute(BASE));
 

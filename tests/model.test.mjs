@@ -38,4 +38,14 @@ for(const config of scenarios){
   shot.stages.forEach((s,i)=>assert(s.active.length<=r.capacity[i]*(i===3?config.batch:1),'Active work must fit station capacity'));
  }
 }
-console.log('PASS: deterministic scenarios, staffing and chamber effects, validation, spacecraft/time conservation, station capacity, annual accounting.');
+// The time loop bails out at t=20000 working days if a scenario never finishes (see model.mjs).
+// The worst legal combination of LIMITS (max demand/rework, min chambers/batch/lines/workers,
+// max stage durations) is the scenario most likely to hit that ceiling; keep real safety margin
+// so future model or LIMITS changes get caught here instead of surfacing as a runtime error.
+{
+ const worst={demand:256,lines:1,workers:4,chambers:1,batch:1,rework:30,automatic:false,assemblyDays:30,functionDays:15,environmentDays:30,materialCost:8,laborCost:.9};
+ const r=simulate(worst);
+ assert.equal(r.jobs.length,worst.demand);
+ assert(r.finish<20000*.9,`Worst-case legal input must finish with safety margin before the 20000-day cutoff (finish=${r.finish})`);
+}
+console.log('PASS: deterministic scenarios, staffing and chamber effects, validation, spacecraft/time conservation, station capacity, annual accounting, worst-case input margin.');
