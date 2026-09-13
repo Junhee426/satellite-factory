@@ -20,11 +20,16 @@ export class SimulationClient{
  compute(input){
   if(this.closed)return Promise.reject(new Error('Simulation client is closed.'));
   const config=validate(input),key=this.key(config);
-  if(this.queued){this.queued.reject(superseded());this.queued=null;}
+  if(this.queued){
+   if(this.queued.key===key)return new Promise((resolve,reject)=>{this.queued.waiters.push({resolve,reject});});
+   this.queued.reject(superseded());this.queued=null;
+  }
   if(this.cache.has(key)){
    const result=this.cache.get(key);this.remember(key,result);return Promise.resolve(result);
   }
-  return new Promise((resolve,reject)=>{this.queued={id:++this.sequence,key,config,resolve,reject};this.pump();});
+  // An identical request already computing rides along instead of triggering a duplicate worker round trip.
+  if(this.active&&this.active.key===key)return new Promise((resolve,reject)=>{this.active.waiters.push({resolve,reject});});
+  return new Promise((resolve,reject)=>{this.queued={id:++this.sequence,key,config,resolve,reject,waiters:[]};this.pump();});
  }
  pump(){
   if(this.closed||this.active||!this.queued)return;
@@ -50,13 +55,21 @@ export class SimulationClient{
  receive(message){
   if(!this.active||message.id!==this.active.id)return;
   const job=this.active;this.active=null;
-  if(message.error)job.reject(new Error(message.error));
-  else{this.remember(job.key,message.result);job.resolve(message.result);}
+  if(message.error){
+   const error=new Error(message.error);
+   job.reject(error);for(const w of job.waiters)w.reject(error);
+  }else{
+   this.remember(job.key,message.result);
+   job.resolve(message.result);for(const w of job.waiters)w.resolve(message.result);
+  }
   this.pump();
  }
  dispose(){
   this.closed=true;this.worker?.terminate();
-  this.active?.reject(superseded());this.queued?.reject(superseded());
+  for(const job of [this.active,this.queued]){
+   if(!job)continue;
+   job.reject(superseded());for(const w of job.waiters)w.reject(superseded());
+  }
   this.active=this.queued=null;this.cache.clear();
  }
 }
