@@ -1,4 +1,4 @@
-import {BASE,LABELS,LIMITS,validate,simulate,snapshot} from './model.mjs';
+import {BASE,LABELS,LIMITS,MC_LIMITS,validate,simulate,snapshot,monteCarlo} from './model.mjs';
 import {SimulationClient} from './simulation-client.mjs';
 import {serializeState,importState} from './persistence.mjs';
 const $=id=>document.getElementById(id);
@@ -28,7 +28,7 @@ function syncControls(){
 function busy(value){
  computing=value;
  $('save-baseline').disabled=value;$('download').disabled=value;
- $('save-state').disabled=value;$('load-state').disabled=value;
+ $('save-state').disabled=value;$('load-state').disabled=value;$('mc-run').disabled=value;
  $('calculation-status').textContent=value?'계산 중…':'';
  $('metrics').setAttribute('aria-busy',String(value));
 }
@@ -160,6 +160,39 @@ $('load-state-input').addEventListener('change',async e=>{
   toast(`불러오기 실패: ${error.message}`);
  }
 });
+$('mc-seed').min=MC_LIMITS.seed[0];$('mc-seed').max=MC_LIMITS.seed[1];
+$('mc-iterations').min=MC_LIMITS.iterations[0];$('mc-iterations').max=MC_LIMITS.iterations[1];
+function mcRow(label,digits,unit,base,current){
+ const cell=v=>v==null?'—':fmt(v,digits)+(unit?` ${unit}`:'');
+ return `<tr><th>${label}</th><td>${cell(base.p10)}</td><td>${cell(base.p50)}</td><td>${cell(base.p90)}</td><td>${cell(current.p10)}</td><td>${cell(current.p50)}</td><td>${cell(current.p90)}</td></tr>`;
+}
+async function runMonteCarlo(){
+ if(computing)return;
+ const seed=Number($('mc-seed').value),iterations=Number($('mc-iterations').value);
+ $('mc-run').disabled=true;$('mc-status').textContent='몬테카를로 계산 중…';$('mc-results').innerHTML='';
+ // Let the browser paint the "계산 중" status before the synchronous Monte Carlo loop runs.
+ await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+ try{
+  // Baseline and current scenario share the same seed, so they draw the same random sequence
+  // (see monteCarlo()'s common-random-numbers note in model.mjs) — differences below reflect the
+  // scenario change itself, not independent RNG noise between the two runs.
+  const baseSummary=monteCarlo(baseline,{seed,iterations});
+  const curSummary=monteCarlo(config,{seed,iterations});
+  $('mc-results').innerHTML=`<table class="mc-table"><thead><tr><th>지표</th><th colspan="3">기준 (P10 · P50 · P90)</th><th colspan="3">현재 (P10 · P50 · P90)</th></tr></thead><tbody>`+
+   mcRow('연간 출하량',0,'기',baseSummary.shipments,curSummary.shipments)+
+   mcRow('평균 제작기간',1,'가동일',baseSummary.lead,curSummary.lead)+
+   mcRow('기당 추정비용',2,'억원',baseSummary.cost,curSummary.cost)+
+   '</tbody></table>'+
+   `<p class="mc-note">기준·현재 시나리오 모두 시드 ${seed}에서 시작하는 동일한 난수열을 위성 번호 기준으로 공유하며, 반복 ${iterations}회의 결과를 집계했습니다. 두 시나리오의 차이는 난수 변동이 아닌 조건 차이에서 발생합니다.</p>`;
+  $('mc-status').textContent=`시드 ${seed} · ${iterations}회 반복 계산 완료`;
+ }catch(error){
+  $('mc-results').innerHTML='';$('mc-status').textContent='';
+  toast(error.message);
+ }finally{
+  $('mc-run').disabled=false;
+ }
+}
+$('mc-run').addEventListener('click',runMonteCarlo);
 function resultSummary(){return {config:{...config},baseline:{...baseline},annualShipments:result.shipments,averageLeadDays:result.shipments?result.lead:null,unitCostBillionKRW:result.cost===null?null:result.cost/10,lastShipmentWorkingDay:result.finish,bottleneck:LABELS[result.bottleneck],snapshot:snapshot(result,day)};}
 async function readLatestResult(){let observed;do{observed=pending;await observed;}while(observed!==pending);return resultSummary();}
 syncControls();render();

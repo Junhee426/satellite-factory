@@ -1,6 +1,6 @@
 # 위성 양산공장 시뮬레이터 · Render 배포본
 
-공정 흐름 재생, 병목 표시, 조건 조정, 시나리오 비교, 출하·대기 그래프, CSV 내보내기를 제공하는 한국어 웹앱입니다.
+공정 흐름 재생, 병목 표시, 조건 조정, 시나리오 비교, 출하·대기 그래프, CSV 내보내기, 시나리오 JSON 저장/불러오기, 몬테카를로(P10/P50/P90) 분석을 제공하는 한국어 웹앱입니다.
 
 **권장 방식: Render Static Site.** 계산은 브라우저의 JavaScript Web Worker에서 수행합니다. 데이터베이스·API 키·Python 서버는 필요하지 않습니다. 이 패키지는 배포 준비본이며 사용자의 Render 계정에 실제 배포한 상태는 아닙니다.
 
@@ -89,6 +89,16 @@ python benchmarks/compare.py
 
 마지막 명령은 JS/Python 결과 일치 여부를 검증하고 성능을 재측정해 `benchmarks/results.json`을 갱신합니다. 결과에는 입력·지표·위성별 작업·대기 이력이 포함됩니다.
 
+## 몬테카를로 분석
+
+`--monte-carlo` 옵션으로 seed 기반 반복 계산과 P10/P50/P90 백분위수를 얻을 수 있습니다.
+
+```bash
+python python/engine.py --config scenarios.json --monte-carlo --seed 1 --iterations 200 --output mc-results.json
+```
+
+같은 시드는 위성 번호 기준으로 동일한 재작업 난수열을 사용하므로, 기준 시나리오와 비교 시나리오를 같은 시드로 각각 실행하면 두 결과의 차이가 난수 변동이 아닌 조건 차이를 반영합니다(공통난수법). 웹앱의 ‘몬테카를로 분석’ 패널도 같은 방식으로 기준·현재 시나리오를 동일한 시드로 비교합니다. JS(`dist/model.mjs`)와 Python(`python/engine.py`) 구현은 `tests/monte-carlo-parity.test.mjs`로 일치 여부를 검증합니다.
+
 ## 파일과 검증
 
 | 경로 | 역할 |
@@ -97,7 +107,7 @@ python benchmarks/compare.py
 | `dist/` | 배포 웹앱·계산 Worker |
 | `python/engine.py` | Python 로컬 계산 |
 | `scripts/verify-static.mjs` | 정적 파일·문법·모델·Worker 검증 |
-| `tests/` | 시간·수량 보존, 설비 수용량, Worker·캐시·요청 교체 테스트 |
+| `tests/` | 시간·수량 보존, 설비 수용량, Worker·캐시·요청 교체, 저장/불러오기, 몬테카를로 테스트 |
 | `benchmarks/` | 시나리오·측정 코드·실측 결과 |
 | `PERFORMANCE.md` | Python 전환 검토 |
 

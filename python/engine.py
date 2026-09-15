@@ -11,6 +11,7 @@ LIMITS = dict(demand=(16,256), lines=(1,10), workers=(4,40), chambers=(1,6),
               batch=(1,8), rework=(0,30), assemblyDays=(1,30),
               functionDays=(1,15), environmentDays=(1,30),
               materialCost=(.1,100), laborCost=(.1,3))
+MC_LIMITS = dict(seed=(0,1_000_000), iterations=(1,500))
 
 def validate(values=None):
     c = {**BASE, **(values or {})}
@@ -26,16 +27,29 @@ def validate(values=None):
         raise ValueError('automatic: bool 값이 필요합니다.')
     return c
 
-def random_for(i):
-    # Match JavaScript's signed bitwise operations and double multiplication.
-    x = ((i + 13) * 374761393) & 0xffffffff
+def validate_monte_carlo(seed=1, iterations=200):
+    # Monte Carlo seed/iteration inputs are a separate concern from the factory config validated
+    # above, so this mirrors validate()'s style rather than reusing/duplicating it.
+    o = dict(seed=seed, iterations=iterations)
+    for key, (low, high) in MC_LIMITS.items():
+        v = o[key]
+        if isinstance(v, bool) or not isinstance(v, int) or not low <= v <= high:
+            raise ValueError(f'{key}: {low}~{high} 범위의 정수가 필요합니다.')
+    return o['seed'], o['iterations']
+
+SEED_PRIME = 2654435761
+
+def random_for(i, seed=0):
+    # Match JavaScript's signed bitwise operations and double multiplication. seed=0 (every plain
+    # simulate() call) reproduces the original unseeded hash exactly; see model.mjs randomFor().
+    x = ((i + 13) * 374761393 + seed * SEED_PRIME) & 0xffffffff
     x = x ^ (x >> 13)
     if x >= 0x80000000:
         x -= 0x100000000
     x = int(float(x) * 1274126177) & 0xffffffff
     return (x ^ (x >> 16)) / 4294967296
 
-def simulate(values=None):
+def simulate(values=None, seed=0):
     c = validate(values)
     year, step = 250, .25
     capacity = [3, min(c['lines'], c['workers']//4), 3, c['chambers'], 2]
@@ -63,7 +77,7 @@ def simulate(values=None):
                     if s == 4:
                         j['done'] = t
                         complete += 1
-                    elif s == 2 and not j['reworked'] and random_for(j['id']) < probability:
+                    elif s == 2 and not j['reworked'] and random_for(j['id'], seed) < probability:
                         j['reworked'] = True
                         enqueue(j, 1, t, True)
                     else:
@@ -100,15 +114,54 @@ def simulate(values=None):
     return dict(config=c,jobs=jobs,shipments=shipments,lead=lead,cost=cost,fixed=fixed,
                 monthly=monthly,avgWait=avg_wait,util=util,bottleneck=avg_wait.index(max(avg_wait)),
                 capacity=capacity,duration=duration,finish=max(j['done'] for j in jobs),
-                year=year,reworkCount=sum(j['reworked'] for j in jobs))
+                year=year,reworkCount=sum(j['reworked'] for j in jobs),seed=seed)
+
+def _percentile(values, p):
+    # Linear-interpolated percentile (R-7 / Excel PERCENTILE.INC), matched exactly by
+    # model.mjs's percentile() so both languages report the same P10/P50/P90.
+    s = sorted(values)
+    if not s:
+        return None
+    idx = (len(s)-1)*p
+    lo, hi = math.floor(idx), math.ceil(idx)
+    return s[lo] + (s[hi]-s[lo])*(idx-lo)
+
+def _summarize(values):
+    return dict(p10=_percentile(values,.1), p50=_percentile(values,.5), p90=_percentile(values,.9),
+                mean=(sum(values)/len(values) if values else None), samples=len(values))
+
+def monte_carlo(values=None, seed=1, iterations=200):
+    # Seed-based Monte Carlo: re-runs simulate() `iterations` times (seed+i each time) and reports
+    # P10/P50/P90 for annual shipments, average lead time and unit cost. Because random_for(id,
+    # seed) depends only on (id, seed) and not on call order, calling monte_carlo() on a baseline
+    # and a comparison config with the SAME seed makes iteration i draw the identical rework
+    # outcome for spacecraft #k in both — see model.mjs monteCarlo() for the full rationale.
+    seed, iterations = validate_monte_carlo(seed, iterations)
+    shipments, lead, cost = [], [], []
+    for i in range(iterations):
+        r = simulate(values, seed=seed+i)
+        shipments.append(r['shipments'])
+        if r['shipments']:
+            lead.append(r['lead'])
+        if r['cost'] is not None:
+            cost.append(r['cost'])
+    return dict(seed=seed, iterations=iterations,
+                shipments=_summarize(shipments), lead=_summarize(lead), cost=_summarize(cost))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='위성 양산 모델 · Python 로컬 분석')
     parser.add_argument('--config', type=Path, help='입력 JSON 객체 또는 시나리오 객체 배열')
     parser.add_argument('--output', type=Path, help='결과 JSON 파일 (생략하면 표준출력)')
+    parser.add_argument('--monte-carlo', action='store_true', help='seed 기반 Monte Carlo 분석 실행 (P10/P50/P90)')
+    parser.add_argument('--seed', type=int, default=1, help='Monte Carlo 시드 (기본 1)')
+    parser.add_argument('--iterations', type=int, default=200, help='Monte Carlo 반복 횟수 (기본 200)')
     args = parser.parse_args()
     configs = json.loads(args.config.read_text(encoding='utf-8')) if args.config else {}
-    output = [simulate(c) for c in configs] if isinstance(configs,list) else simulate(configs)
+    if args.monte_carlo:
+        output = ([monte_carlo(c, seed=args.seed, iterations=args.iterations) for c in configs]
+                   if isinstance(configs,list) else monte_carlo(configs, seed=args.seed, iterations=args.iterations))
+    else:
+        output = [simulate(c) for c in configs] if isinstance(configs,list) else simulate(configs)
     data = json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False)
     if args.output:
         args.output.write_text(data+'\n',encoding='utf-8')

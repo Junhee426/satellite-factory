@@ -1,6 +1,7 @@
 export const BASE={demand:128,lines:4,workers:16,chambers:1,batch:4,rework:12,automatic:false,assemblyDays:7,functionDays:4,environmentDays:10,materialCost:8,laborCost:0.9};
 export const LABELS=['입고·검수','조립·통합','기능시험','환경시험','최종검사·출하'];
 export const LIMITS={demand:[16,256],lines:[1,10],workers:[4,40],chambers:[1,6],batch:[1,8],rework:[0,30],assemblyDays:[1,30],functionDays:[1,15],environmentDays:[1,30],materialCost:[0.1,100],laborCost:[0.1,3]};
+export const MC_LIMITS={seed:[0,1000000],iterations:[1,500]};
 export function validate(input){
  const c={...BASE,...input};
  for(const [key,[min,max]] of Object.entries(LIMITS)){
@@ -10,9 +11,28 @@ export function validate(input){
  if(typeof c.automatic!=='boolean')throw new Error('automatic: 참/거짓 값이 필요합니다.');
  return c;
 }
-function randomFor(i){let x=(i+13)*374761393;x=(x^(x>>>13))*1274126177;return ((x^(x>>>16))>>>0)/4294967296;}
-export function simulate(input){
+// Monte Carlo seed/iteration inputs are a separate concern from the factory config above (they
+// never reach `validate`), so they get their own small range check in the same style rather than
+// a parallel copy of validate() itself.
+export function validateMonteCarlo(options){
+ const o={seed:1,iterations:200,...options};
+ for(const [key,[min,max]] of Object.entries(MC_LIMITS)){
+  if(!Number.isInteger(o[key])||o[key]<min||o[key]>max)throw new Error(`${key}: ${min}~${max} 범위의 정수를 입력하세요.`);
+ }
+ return {seed:o.seed,iterations:o.iterations};
+}
+// seed=0 (the default used by every plain simulate(config) call in this codebase) reproduces the
+// original unseeded hash exactly: (i+13+0*SEED_PRIME)===(i+13). A non-zero seed only ever comes
+// from monteCarlo() below. The seed term is kept small enough (see MC_LIMITS.seed) that
+// (i+13)*374761393 + seed*SEED_PRIME stays an exactly representable double, so this stays a pure,
+// order-independent function of (i, seed) just like the original random_for(i) was of i alone —
+// which is what lets a baseline and a comparison scenario draw the identical value for the same
+// spacecraft id under the same seed (see monteCarlo()).
+const SEED_PRIME=2654435761;
+function randomFor(i,seed=0){let x=(i+13)*374761393+seed*SEED_PRIME;x=(x^(x>>>13))*1274126177;return ((x^(x>>>16))>>>0)/4294967296;}
+export function simulate(input,options={}){
  const c=validate(input),year=250,step=.25;
+ const seed=Number.isInteger(options.seed)?options.seed:0;
  const capacity=[3,Math.min(c.lines,Math.floor(c.workers/4)),3,c.chambers,2];
  const duration=[2,c.assemblyDays,c.functionDays*(c.automatic ? .7 : 1),c.environmentDays,2];
  const probability=c.rework/100*(c.automatic ? .55 : 1);
@@ -29,7 +49,7 @@ export function simulate(input){
    for(const group of ended)for(const entry of group.entries){
     const j=entry.job;
     if(s===4){j.done=t;complete++;}
-    else if(s===2&&!j.reworked&&randomFor(j.id)<probability){j.reworked=true;enqueue(j,1,t,true);}
+    else if(s===2&&!j.reworked&&randomFor(j.id,seed)<probability){j.reworked=true;enqueue(j,1,t,true);}
     else enqueue(j,s+1,t,entry.retry&&s===1);
    }
   }
@@ -58,7 +78,38 @@ export function simulate(input){
  const cost=shipments?c.materialCost+(fixed+extra)/shipments:null;
  const monthly=Array.from({length:12},(_,i)=>jobs.filter(j=>j.done<=(i+1)*year/12).length);
  const bottleneck=avgWait.indexOf(Math.max(...avgWait));
- return {config:c,jobs,shipments,lead,cost,fixed,monthly,avgWait,util,bottleneck,capacity,duration,finish:jobs.at(-1).done>0?Math.max(...jobs.map(j=>j.done)):0,year,reworkCount:jobs.filter(j=>j.reworked).length};
+ return {config:c,jobs,shipments,lead,cost,fixed,monthly,avgWait,util,bottleneck,capacity,duration,finish:jobs.at(-1).done>0?Math.max(...jobs.map(j=>j.done)):0,year,reworkCount:jobs.filter(j=>j.reworked).length,seed};
+}
+// Linear-interpolated percentile (the common "R-7"/Excel PERCENTILE.INC method), matched exactly
+// by python/engine.py's _percentile so both languages report the same P10/P50/P90.
+function percentile(values,p){
+ const sorted=[...values].sort((a,b)=>a-b);
+ if(!sorted.length)return null;
+ const idx=(sorted.length-1)*p,lo=Math.floor(idx),hi=Math.ceil(idx);
+ return sorted[lo]+(sorted[hi]-sorted[lo])*(idx-lo);
+}
+function summarize(values){
+ return {p10:percentile(values,.1),p50:percentile(values,.5),p90:percentile(values,.9),mean:values.length?values.reduce((s,v)=>s+v,0)/values.length:null,samples:values.length};
+}
+// Seed-based Monte Carlo: re-runs `simulate` `iterations` times, once per seed+i, and reports
+// P10/P50/P90 (plus mean) for annual shipments, average lead time and unit cost.
+//
+// Common random numbers: because randomFor(id, seed) depends only on (spacecraft id, seed) and
+// not on call order, calling monteCarlo(baselineConfig, {seed, iterations}) and
+// monteCarlo(comparisonConfig, {seed, iterations}) makes iteration i draw the exact same rework
+// outcome for spacecraft #k in BOTH scenarios (as long both have a spacecraft #k). Differences
+// between the two scenarios' percentile outputs therefore come from the scenario's own conditions
+// (chambers, staffing, automatic inspection, ...), not from independent RNG noise between runs.
+export function monteCarlo(config,options){
+ const {seed,iterations}=validateMonteCarlo(options);
+ const shipments=[],lead=[],cost=[];
+ for(let i=0;i<iterations;i++){
+  const r=simulate(config,{seed:seed+i});
+  shipments.push(r.shipments);
+  if(r.shipments)lead.push(r.lead);
+  if(r.cost!==null)cost.push(r.cost);
+ }
+ return {seed,iterations,shipments:summarize(shipments),lead:summarize(lead),cost:summarize(cost)};
 }
 export function snapshot(result,day){
  const stages=LABELS.map((name,s)=>({name,queue:[],active:[],done:0}));
