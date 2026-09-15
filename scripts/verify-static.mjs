@@ -17,4 +17,8 @@ for(const file of readdirSync(dist).filter(f=>f.endsWith('.mjs'))){
 }
 execFileSync(process.execPath,[resolve(root,'tests/model.test.mjs')],{stdio:'inherit'});
 execFileSync(process.execPath,[resolve(root,'tests/simulation-client.test.mjs')],{stdio:'inherit'});
+execFileSync(process.execPath,[resolve(root,'tests/persistence.test.mjs')],{stdio:'inherit'});
+execFileSync(process.execPath,[resolve(root,'tests/monte-carlo.test.mjs')],{stdio:'inherit'});
+// js-python-parity.test.mjs and monte-carlo-parity.test.mjs are intentionally left out here, same
+// as before: they need a Python interpreter, which this Node-only static build does not require.
 console.log('Render static package verified. Publish directory: dist');
