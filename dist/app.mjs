@@ -6,6 +6,14 @@ let config={...BASE},baseline={...BASE},result=simulate(config),baseResult=resul
 const client=new SimulationClient();client.seed(result);
 let requestVersion=0,pending=Promise.resolve(result),computing=false;
 const fields=[['demand','연간 발주량','기',16,256,8],['lines','조립 셀','개',1,10,1],['workers','조립인력','명',4,40,4],['chambers','시험챔버','개',1,6,1],['batch','챔버당 동시 시험','기',1,8,1],['rework','재작업 확률','%',0,30,1]];
+const sat3d=extra=>`<div class="sat3d ${extra}"><i class="face front"></i><i class="face back"></i><i class="face left"></i><i class="face right"></i><i class="panel left"></i><i class="panel right"></i></div>`;
+const STAGE_MODELS=[
+ `<div class="model-scene stage-icon-0" aria-hidden="true">${sat3d('')}<div class="crate"></div><span class="scan-beam"></span></div>`,
+ `<div class="model-scene stage-icon-1" aria-hidden="true">${sat3d('')}<span class="tool-orbit"></span></div>`,
+ `<div class="model-scene stage-icon-2" aria-hidden="true">${sat3d('')}<span class="signal-ring"></span><span class="signal-ring delay"></span></div>`,
+ `<div class="model-scene stage-icon-3" aria-hidden="true"><div class="chamber-ring"></div>${sat3d('small')}</div>`,
+ `<div class="model-scene stage-icon-4" aria-hidden="true">${sat3d('deployed')}<span class="launch-glow"></span></div>`
+];
 const advanced=[['assemblyDays','조립시간 / 가동일',1,30,1],['functionDays','기능시험 / 가동일',1,15,1],['environmentDays','환경시험 / 가동일',1,30,1],['materialCost','기당 재료비 / 억원',.1,100,.1],['laborCost','인당 연간비용 / 억원',.1,3,.1]];
 $('control-fields').innerHTML=fields.map(([key,label,unit,min,max,step])=>`<div class="control-field"><div class="control-label"><label for="${key}">${label}</label><output for="${key}" id="value-${key}">${config[key]}<small>${unit}</small></output></div><input type="range" id="${key}" min="${min}" max="${max}" step="${step}" value="${config[key]}"><div class="range-ends"><span>${min}${unit}</span><span>${max}${unit}</span></div></div>`).join('');
 $('advanced-fields').innerHTML=advanced.map(([key,label,min,max,step])=>`<div class="number-field"><label for="${key}">${label}</label><input id="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${config[key]}" inputmode="decimal"></div>`).join('');
@@ -50,7 +58,7 @@ function renderFlow(){
   const hot=s===result.bottleneck&&result.avgWait[s]>.25;
   const cap=s===1?`${result.capacity[s]} / ${flowConfig.lines}셀 가동`:s===3?`${flowConfig.chambers}챔버 × ${flowConfig.batch}기`:`${result.capacity[s]}개 작업대`;
   const tokens=stage.active.slice(0,12).map(j=>`<i class="sat-token ${j.retry?'retry':''}" style="opacity:${.55+j.progress*.45}" title="위성 ${String(j.id).padStart(3,'0')} · ${j.retry?'재작업 · ':''}${fmt(j.progress*100)}% 진행"></i>`).join('');
-  return `<article class="stage ${hot?'bottleneck':''}" aria-label="${stage.name}, 작업 중 ${stage.active.length}기, 대기 ${stage.queue.length}기"><div class="stage-top"><span class="stage-number">0${s+1}</span>${hot?'<span class="stage-badge">병목</span>':''}</div><h3>${stage.name}</h3><p class="stage-capacity">${cap}</p><div class="stage-work" aria-hidden="true">${tokens||'<span class="idle-label">작업 대기</span>'}${stage.active.length>12?`<span class="extra-token">+${stage.active.length-12}</span>`:''}</div><div class="stage-state"><span>작업<strong>${stage.active.length}</strong></span><span class="queued">대기<strong>${stage.queue.length}</strong></span></div><div class="util-track"><i style="width:${Math.min(100,result.util[s]*100)}%"></i></div><div class="stage-util">연간 가동률 ${fmt(result.util[s]*100)}%</div></article>`;
+  return `<article class="stage ${hot?'bottleneck':''}" aria-label="${stage.name}, 작업 중 ${stage.active.length}기, 대기 ${stage.queue.length}기"><div class="stage-top"><span class="stage-number">0${s+1}</span>${hot?'<span class="stage-badge">병목</span>':''}</div><h3>${stage.name}</h3><p class="stage-capacity">${cap}</p>${STAGE_MODELS[s]}<div class="stage-work" aria-hidden="true">${tokens||'<span class="idle-label">작업 대기</span>'}${stage.active.length>12?`<span class="extra-token">+${stage.active.length-12}</span>`:''}</div><div class="stage-state"><span>작업<strong>${stage.active.length}</strong></span><span class="queued">대기<strong>${stage.queue.length}</strong></span></div><div class="util-track"><i style="width:${Math.min(100,result.util[s]*100)}%"></i></div><div class="stage-util">연간 가동률 ${fmt(result.util[s]*100)}%</div></article>`;
  }).join('');
  $('day-label').textContent=`${fmt(day)} / 250 가동일`;
  $('day-summary').textContent=`투입 ${shot.released}기 · 공정 내 ${shot.wip}기 · 출하 ${shot.completed}기`;
