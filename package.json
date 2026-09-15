@@ -6,7 +6,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "build": "node scripts/verify-static.mjs",
-    "test": "node tests/model.test.mjs && node tests/simulation-client.test.mjs && node tests/js-python-parity.test.mjs",
+    "test": "node tests/model.test.mjs && node tests/simulation-client.test.mjs && node tests/js-python-parity.test.mjs && node tests/persistence.test.mjs",
     "benchmark": "node benchmarks/measure.mjs"
   }
 }

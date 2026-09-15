@@ -15,7 +15,7 @@
 </section>
 <section class="experiment panel"><div class="section-heading"><div><h2>투자 효과 비교</h2><p>기준 시나리오에 한 가지 변화를 적용합니다.</p></div><button class="button" id="save-baseline">현재 조건을 기준으로</button></div><div class="presets" id="presets"><button data-preset="base" class="active"><span>01</span>기준 시나리오</button><button data-preset="chamber"><span>02</span>시험챔버 +1</button><button data-preset="staff"><span>03</span>조립인력 +4명</button><button data-preset="auto"><span>04</span>자동검사 도입</button></div><div id="comparison" class="comparison"></div></section>
 <div class="chart-grid"><section class="panel chart-panel"><div class="section-heading"><div><h2>누적 출하 추이</h2><p>연간 250가동일 · 빈 공장부터 생산 시작</p></div><div class="chart-legend"><span class="current-key">현재</span><span class="base-key">기준</span></div></div><div id="output-chart"></div></section><section class="panel chart-panel"><div class="section-heading"><div><h2>공정별 대기시간</h2><p>전체 발주분 · 공정 방문 1회당 평균</p></div><span class="unit">가동일</span></div><div id="wait-chart"></div></section></div>
-<div class="details-row"><button id="download" class="text-button">↓ 비교 결과 CSV</button><span id="model-summary"></span></div>
+<div class="details-row"><div class="details-actions"><button id="download" class="text-button">↓ 비교 결과 CSV</button><button id="save-state" class="text-button">↓ 상태 저장 (JSON)</button><button id="load-state" class="text-button">↑ 상태 불러오기</button><input id="load-state-input" type="file" accept="application/json,.json" hidden></div><span id="model-summary"></span></div>
 </section></div>
 <footer><span>FACTORY LAB <b>/</b> SATELLITE MANUFACTURING</span><span>시나리오 비교용 · 설계검증 및 사업비 산정용 확정 모델이 아닙니다.</span></footer>
 </main>

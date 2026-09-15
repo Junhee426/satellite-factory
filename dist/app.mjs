@@ -1,5 +1,6 @@
 import {BASE,LABELS,LIMITS,validate,simulate,snapshot} from './model.mjs';
 import {SimulationClient} from './simulation-client.mjs';
+import {serializeState,importState} from './persistence.mjs';
 const $=id=>document.getElementById(id);
 const fmt=(n,d=0)=>Number(n).toLocaleString('ko-KR',{minimumFractionDigits:d,maximumFractionDigits:d});
 let config={...BASE},baseline={...BASE},result=simulate(config),baseResult=result,day=125,playing=false,speed=1,activePreset='base',toastTimer;
@@ -27,6 +28,7 @@ function syncControls(){
 function busy(value){
  computing=value;
  $('save-baseline').disabled=value;$('download').disabled=value;
+ $('save-state').disabled=value;$('load-state').disabled=value;
  $('calculation-status').textContent=value?'계산 중…':'';
  $('metrics').setAttribute('aria-busy',String(value));
 }
@@ -129,6 +131,35 @@ function exportCSV(){
  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='satellite-factory-comparison.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('입력 조건과 비교 결과를 CSV로 내보냈습니다.');
 }
 $('download').addEventListener('click',exportCSV);
+function exportState(){
+ if(computing)return;
+ const data=serializeState({config,baseline,day});
+ const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+ const a=document.createElement('a');a.href=url;a.download='satellite-factory-state.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ toast('공장 구성·기준·조회 가동일을 저장했습니다.');
+}
+$('save-state').addEventListener('click',exportState);
+$('load-state').addEventListener('click',()=>{if(!computing)$('load-state-input').click();});
+$('load-state-input').addEventListener('change',async e=>{
+ const file=e.target.files[0];e.target.value='';
+ if(!file)return;
+ try{
+  const text=await file.text();
+  // importState() validates config/baseline/day through model.mjs's existing `validate` and
+  // throws before computing anything if the file is malformed or out of range; only a fully
+  // valid import reaches the assignments below, so a bad file can never overwrite the results
+  // currently on screen.
+  const next=importState(text);
+  setPlaying(false);
+  config=next.config;baseline=next.baseline;day=next.day;result=next.result;baseResult=next.baseResult;
+  activePreset=null;requestVersion++;client.seed(result);client.seed(baseResult);
+  syncControls();render();
+  toast('저장 파일을 불러왔습니다.');
+ }catch(error){
+  toast(`불러오기 실패: ${error.message}`);
+ }
+});
 function resultSummary(){return {config:{...config},baseline:{...baseline},annualShipments:result.shipments,averageLeadDays:result.shipments?result.lead:null,unitCostBillionKRW:result.cost===null?null:result.cost/10,lastShipmentWorkingDay:result.finish,bottleneck:LABELS[result.bottleneck],snapshot:snapshot(result,day)};}
 async function readLatestResult(){let observed;do{observed=pending;await observed;}while(observed!==pending);return resultSummary();}
 syncControls();render();
