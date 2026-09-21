@@ -8,8 +8,8 @@ let requestVersion=0,pending=Promise.resolve(result),computing=false;
 const fields=[['demand','연간 발주량','기',16,256,8],['lines','조립 셀','개',1,10,1],['workers','조립인력','명',4,40,4],['chambers','시험챔버','개',1,6,1],['batch','챔버당 동시 시험','기',1,8,1],['rework','재작업 확률','%',0,30,1]];
 const sat3d=extra=>`<div class="sat3d ${extra}"><i class="face front"></i><i class="face back"></i><i class="face left"></i><i class="face right"></i><i class="panel left"></i><i class="panel right"></i></div>`;
 const STAGE_MODELS=[
- `<div class="model-scene stage-icon-0" aria-hidden="true">${sat3d('')}<div class="crate"></div><span class="scan-beam"></span></div>`,
- `<div class="model-scene stage-icon-1" aria-hidden="true">${sat3d('')}<span class="tool-orbit"></span></div>`,
+ `<div class="model-scene stage-icon-0" aria-hidden="true">${sat3d('bare')}<div class="crate"></div><span class="scan-beam"></span><span class="loose-panel lp-left"></span><span class="loose-panel lp-right"></span></div>`,
+ `<div class="model-scene stage-icon-1" aria-hidden="true">${sat3d('assembling')}<span class="tool-orbit"></span></div>`,
  `<div class="model-scene stage-icon-2" aria-hidden="true">${sat3d('')}<span class="signal-ring"></span><span class="signal-ring delay"></span></div>`,
  `<div class="model-scene stage-icon-3" aria-hidden="true"><div class="chamber-ring"></div>${sat3d('small')}</div>`,
  `<div class="model-scene stage-icon-4" aria-hidden="true">${sat3d('deployed')}<span class="launch-glow"></span></div>`
