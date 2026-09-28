@@ -13,6 +13,8 @@ LIMITS = dict(demand=(16,256), lines=(1,10), workers=(4,40), chambers=(1,6),
               materialCost=(.1,100), laborCost=(.1,3))
 
 def validate(values=None):
+    if values is not None and not isinstance(values, dict):
+        raise ValueError('설정은 JSON 객체여야 합니다.')
     c = {**BASE, **(values or {})}
     for key, (low, high) in LIMITS.items():
         v = c[key]

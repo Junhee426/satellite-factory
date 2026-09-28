@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {BASE,simulate,snapshot,validate} from '../dist/model.mjs';
+import {BASE,simulate,snapshot,validate,monthlyUtilization} from '../dist/model.mjs';
 
 const base=simulate(BASE);
 assert.deepEqual(simulate(BASE),base,'Runs must be reproducible');
@@ -10,7 +10,7 @@ assert.throws(()=>validate({...BASE,chambers:0}));
 assert.throws(()=>validate({...BASE,demand:NaN}));
 assert.throws(()=>validate({...BASE,workers:4.5}));
 
-const scenarios=[BASE,{...BASE,rework:0},{...BASE,chambers:2},{...BASE,automatic:true},{...BASE,demand:16},{...BASE,demand:256,lines:1,workers:4,batch:1,rework:30,assemblyDays:30,environmentDays:30},{...BASE,demand:256,lines:10,workers:40,chambers:6,batch:8,assemblyDays:1,functionDays:1,environmentDays:1}];
+const scenarios=[BASE,{...BASE,rework:0},{...BASE,chambers:2},{...BASE,automatic:true},{...BASE,demand:16},{...BASE,demand:16,batch:8},{...BASE,demand:64,chambers:2,batch:6},{...BASE,demand:256,lines:1,workers:4,batch:1,rework:30,assemblyDays:30,environmentDays:30},{...BASE,demand:256,lines:10,workers:40,chambers:6,batch:8,assemblyDays:1,functionDays:1,environmentDays:1}];
 for(const config of scenarios){
  const r=simulate(config);
  assert.equal(r.jobs.length,config.demand);
@@ -30,6 +30,11 @@ for(const config of scenarios){
   assert.equal(processing+waiting,j.done-j.release,'Every day in the system must be accounted for');
   j.segments.forEach((seg,i)=>{assert(seg.start>=j.release);assert(seg.end>seg.start);if(i>0)assert(seg.start>=j.segments[i-1].end);});
  }
+ const monthly=monthlyUtilization(r);
+ r.util.forEach((annual,s)=>{
+  const mean=monthly.reduce((sum,row)=>sum+row[s],0)/12;
+  assert(Math.abs(mean-annual)<1e-9,`Monthly utilization must average to the annual value for stage ${s} (${mean} vs ${annual})`);
+ });
  for(const day of [0,1,15,50,125,249,250,r.finish]){
   const shot=snapshot(r,day);
   const working=shot.stages.reduce((s,v)=>s+v.active.length,0);
@@ -48,4 +53,4 @@ for(const config of scenarios){
  assert.equal(r.jobs.length,worst.demand);
  assert(r.finish<20000*.9,`Worst-case legal input must finish with safety margin before the 20000-day cutoff (finish=${r.finish})`);
 }
-console.log('PASS: deterministic scenarios, staffing and chamber effects, validation, spacecraft/time conservation, station capacity, annual accounting, worst-case input margin.');
+console.log('PASS: deterministic scenarios, staffing and chamber effects, validation, spacecraft/time conservation, station capacity, annual accounting, monthly/annual utilization agreement, worst-case input margin.');
