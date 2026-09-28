@@ -74,3 +74,20 @@ export function snapshot(result,day){
  }
  return {stages,completed,released,wip:released-completed};
 }
+// Monthly equipment occupancy on the same basis as result.util: stations for single-unit stages, chambers for the
+// environment test. Batches that start together share one end and are full except possibly the last, so ceil(n/batch)
+// chambers were occupied; dividing per-satellite time by the batch size undercounts partially filled chambers.
+export function monthlyUtilization(result){
+ const {year,capacity,config:{batch}}=result,monthLen=year/12,busy=Array.from({length:12},()=>Array(capacity.length).fill(0)),chamberStarts=new Map();
+ const add=(stage,start,end,count)=>{
+  const m0=Math.max(0,Math.floor(start/monthLen)),m1=Math.min(11,Math.floor(Math.min(end,year-1e-6)/monthLen));
+  for(let m=m0;m<=m1;m++)busy[m][stage]+=count*Math.max(0,Math.min(end,(m+1)*monthLen)-Math.max(start,m*monthLen));
+ };
+ for(const j of result.jobs)for(const seg of j.segments){
+  if(seg.stage!==3){add(seg.stage,seg.start,seg.end,1);continue;}
+  const group=chamberStarts.get(seg.start);
+  if(group)group.n++;else chamberStarts.set(seg.start,{end:seg.end,n:1});
+ }
+ for(const [start,{end,n}] of chamberStarts)add(3,start,end,Math.ceil(n/batch));
+ return busy.map(row=>row.map((v,s)=>Math.min(1,v/(monthLen*capacity[s]))));
+}

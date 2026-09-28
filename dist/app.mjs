@@ -1,4 +1,4 @@
-import {BASE,LABELS,LIMITS,validate,simulate,snapshot} from './model.mjs';
+import {BASE,LABELS,LIMITS,validate,simulate,snapshot,monthlyUtilization} from './model.mjs';
 import {SimulationClient} from './simulation-client.mjs';
 const $=id=>document.getElementById(id);
 const fmt=(n,d=0)=>Number(n).toLocaleString('ko-KR',{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -97,19 +97,6 @@ function chart(){
  $('wait-chart').innerHTML='<div class="wait-bars">'+LABELS.map((label,i)=>`<div class="wait-row ${i===result.bottleneck?'hot':''}"><span>${label}</span><div class="wait-bar"><i class="base" style="width:${baseResult.avgWait[i]/scale*100}%"></i><i class="current" style="width:${result.avgWait[i]/scale*100}%"></i></div><strong>${fmt(result.avgWait[i],1)}<small>기준 ${fmt(baseResult.avgWait[i],1)}</small></strong></div>`).join('')+'</div>';
 }
 const STAGE_COLORS=['#63deca','#4a9bff','#f0b650','#a78bfa','#e2806e'];
-function monthlyUtilization(res){
- const year=res.year,monthLen=year/12,batch=res.config.batch;
- const perMonth=Array.from({length:12},()=>Array(res.capacity.length).fill(0));
- for(const j of res.jobs)for(const seg of j.segments){
-  const m0=Math.max(0,Math.floor(seg.start/monthLen)),m1=Math.min(11,Math.floor(Math.min(seg.end,year-1e-6)/monthLen));
-  for(let m=m0;m<=m1;m++){
-   const mStart=m*monthLen,mEnd=(m+1)*monthLen;
-   perMonth[m][seg.stage]+=Math.max(0,Math.min(seg.end,mEnd)-Math.max(seg.start,mStart));
-  }
- }
- // Chamber batches occupy one seat per c.batch satellites, not one seat per satellite.
- return perMonth.map(row=>row.map((busySum,s)=>Math.min(1,busySum/(monthLen*res.capacity[s]*(s===3?batch:1)))));
-}
 function costChart(){
  const el=$('cost-chart');
  if(!result.cost){el.innerHTML='<p class="chart-empty">연내 출하분이 없어 비용을 계산할 수 없습니다.</p>';return;}
