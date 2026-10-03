@@ -1,13 +1,15 @@
 export const BASE={demand:128,lines:4,workers:16,chambers:1,batch:4,rework:12,automatic:false,assemblyDays:7,functionDays:4,environmentDays:10,materialCost:8,laborCost:0.9};
 export const LABELS=['입고·검수','조립·통합','기능시험','환경시험','최종검사·출하'];
+// Validation messages name the field as the controls do, with the key for programmatic (WebMCP) callers.
+export const NAMES={demand:'연간 발주량',lines:'조립 셀',workers:'조립인력',chambers:'시험챔버',batch:'챔버당 동시 시험',rework:'재작업 확률',assemblyDays:'조립시간',functionDays:'기능시험 시간',environmentDays:'환경시험 시간',materialCost:'기당 재료비',laborCost:'인당 연간비용',automatic:'자동검사'};
 export const LIMITS={demand:[16,256],lines:[1,10],workers:[4,40],chambers:[1,6],batch:[1,8],rework:[0,30],assemblyDays:[1,30],functionDays:[1,15],environmentDays:[1,30],materialCost:[0.1,100],laborCost:[0.1,3]};
 export function validate(input){
  const c={...BASE,...input};
  for(const [key,[min,max]] of Object.entries(LIMITS)){
-  if(!Number.isFinite(c[key])||c[key]<min||c[key]>max)throw new Error(`${key}: ${min}~${max} 범위를 입력하세요.`);
-  if(!['materialCost','laborCost'].includes(key)&&!Number.isInteger(c[key]))throw new Error(`${key}: 정수를 입력하세요.`);
+  if(!Number.isFinite(c[key])||c[key]<min||c[key]>max)throw new Error(`${NAMES[key]}(${key}): ${min}~${max} 범위를 입력하세요.`);
+  if(!['materialCost','laborCost'].includes(key)&&!Number.isInteger(c[key]))throw new Error(`${NAMES[key]}(${key}): 정수를 입력하세요.`);
  }
- if(typeof c.automatic!=='boolean')throw new Error('automatic: 참/거짓 값이 필요합니다.');
+ if(typeof c.automatic!=='boolean')throw new Error(`${NAMES.automatic}(automatic): 참/거짓 값이 필요합니다.`);
  return c;
 }
 function randomFor(i){let x=(i+13)*374761393;x=(x^(x>>>13))*1274126177;return ((x^(x>>>16))>>>0)/4294967296;}

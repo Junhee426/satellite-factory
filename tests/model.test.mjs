@@ -9,6 +9,9 @@ assert.equal(simulate({...BASE,rework:0}).reworkCount,0);
 assert.throws(()=>validate({...BASE,chambers:0}));
 assert.throws(()=>validate({...BASE,demand:NaN}));
 assert.throws(()=>validate({...BASE,workers:4.5}));
+assert.throws(()=>validate({...BASE,materialCost:0}),{message:'기당 재료비(materialCost): 0.1~100 범위를 입력하세요.'},'Errors name the field as the controls do');
+assert.throws(()=>validate({...BASE,assemblyDays:7.5}),{message:'조립시간(assemblyDays): 정수를 입력하세요.'});
+assert.throws(()=>validate({...BASE,automatic:'yes'}),{message:'자동검사(automatic): 참/거짓 값이 필요합니다.'});
 
 const scenarios=[BASE,{...BASE,rework:0},{...BASE,chambers:2},{...BASE,automatic:true},{...BASE,demand:16},{...BASE,demand:16,batch:8},{...BASE,demand:64,chambers:2,batch:6},{...BASE,demand:256,lines:1,workers:4,batch:1,rework:30,assemblyDays:30,environmentDays:30},{...BASE,demand:256,lines:10,workers:40,chambers:6,batch:8,assemblyDays:1,functionDays:1,environmentDays:1}];
 for(const config of scenarios){
