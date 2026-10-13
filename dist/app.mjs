@@ -1,5 +1,6 @@
 import {BASE,LABELS,LIMITS,validate,simulate,snapshot,monthlyUtilization} from './model.mjs';
 import {SimulationClient} from './simulation-client.mjs';
+import {satelliteStatus,trackingSteps,cumulativeWait,stationStatus,pickTracked,satName} from './twin-state.mjs';
 const $=id=>document.getElementById(id);
 const fmt=(n,d=0)=>Number(n).toLocaleString('ko-KR',{minimumFractionDigits:d,maximumFractionDigits:d});
 let config={...BASE},baseline={...BASE},result=simulate(config),baseResult=result,day=125,playing=false,speed=1,activePreset='base',toastTimer;
@@ -52,21 +53,23 @@ function renderMetrics(){
  const d1=deltaText(result.shipments-baseResult.shipments,'기'),d2=deltaText(result.lead-baseResult.lead,'일',true,1),d3=deltaText((result.cost??0)-(baseResult.cost??0),'억원',true,2);
  $('metrics').innerHTML=metric('연간 출하량',fmt(result.shipments),'기',d1.text,d1.cls)+metric('평균 제작기간',result.shipments?fmt(result.lead,1):'—','가동일',result.shipments?d2.text:'연내 출하분 없음',d2.cls)+metric('기당 추정비용',result.cost?fmt(result.cost,2):'—','억원',result.cost?d3.text:'연내 출하분 없음',d3.cls)+metric('연내 발주분 출하율',fmt(result.shipments/config.demand*100,1),'%',`${config.demand}기 중 ${result.shipments}기 출하`);
 }
+const capText=s=>s===1?`${result.capacity[s]} / ${result.config.lines}셀 가동`:s===3?`${result.config.chambers}챔버 × ${result.config.batch}기`:`${result.capacity[s]}개 작업대`;
 let stagesBuilt=false;
 function renderFlow(){
- const shot=snapshot(result,day),flowConfig=result.config;
+ const shot=snapshot(result,day);
  if(!stagesBuilt){
   // Built once so CSS animations on the static 3D model markup keep running instead of
   // restarting every 160ms playback tick (a full innerHTML replace recreates the DOM nodes).
-  $('flow-stages').innerHTML=LABELS.map((name,s)=>`<article class="stage" data-stage="${s}"><div class="stage-top"><span class="stage-number">0${s+1}</span><span class="stage-badge" hidden>병목</span></div><h3>${name}</h3><p class="stage-capacity"></p>${STAGE_MODELS[s]}<div class="stage-work" aria-hidden="true"></div><div class="stage-state"><span>작업<strong class="active-count">0</strong></span><span class="queued">대기<strong class="queue-count">0</strong></span></div><div class="util-track"><i></i></div><div class="stage-util"></div></article>`).join('');
+  $('flow-stages').innerHTML=LABELS.map((name,s)=>`<article class="stage" data-stage="${s}" tabindex="0" role="button"><div class="stage-top"><span class="stage-number">0${s+1}</span><span class="stage-badge" hidden>병목</span></div><h3>${name}</h3><p class="stage-capacity"></p>${STAGE_MODELS[s]}<div class="stage-work" aria-hidden="true"></div><div class="stage-state"><span>작업<strong class="active-count">0</strong></span><span class="queued">대기<strong class="queue-count">0</strong></span></div><div class="util-track"><i></i></div><div class="stage-util"></div></article>`).join('');
   stagesBuilt=true;
  }
  $('flow-stages').querySelectorAll('.stage').forEach((article,s)=>{
   const stage=shot.stages[s],hot=s===result.bottleneck&&result.avgWait[s]>.25;
-  const cap=s===1?`${result.capacity[s]} / ${flowConfig.lines}셀 가동`:s===3?`${flowConfig.chambers}챔버 × ${flowConfig.batch}기`:`${result.capacity[s]}개 작업대`;
+  const cap=capText(s);
   const tokens=stage.active.slice(0,12).map(j=>`<i class="sat-token ${j.retry?'retry':''}" style="opacity:${.55+j.progress*.45}" title="위성 ${String(j.id).padStart(3,'0')} · ${j.retry?'재작업 · ':''}${fmt(j.progress*100)}% 진행"></i>`).join('');
   article.classList.toggle('bottleneck',hot);
-  article.setAttribute('aria-label',`${stage.name}, 작업 중 ${stage.active.length}기, 대기 ${stage.queue.length}기`);
+  article.classList.toggle('selected',selection.type==='station'&&selectedStation()===s);
+  article.setAttribute('aria-label',`${stage.name}, 작업 중 ${stage.active.length}기, 대기 ${stage.queue.length}기. 3D 화면에서 보기`);
   article.querySelector('.stage-badge').hidden=!hot;
   article.querySelector('.stage-capacity').textContent=cap;
   article.querySelector('.stage-work').innerHTML=(tokens||'<span class="idle-label">작업 대기</span>')+(stage.active.length>12?`<span class="extra-token">+${stage.active.length-12}</span>`:'');
@@ -79,8 +82,130 @@ function renderFlow(){
  $('day-summary').textContent=`투입 ${shot.released}기 · 공정 내 ${shot.wip}기 · 출하 ${shot.completed}기`;
  $('day').value=day;
  const b=result.bottleneck;
- $('bottleneck-note').innerHTML=result.avgWait[b]>.25?`<strong>${LABELS[b]} 대기가 가장 깁니다.</strong> 평균 ${fmt(result.avgWait[b],1)}가동일 대기 · ${b===1&&result.capacity[1]<flowConfig.lines?`인력 부족으로 조립 셀 ${flowConfig.lines-result.capacity[1]}개가 가동되지 않습니다.`:b===3?'챔버 수와 동시 시험 수량을 조정해 효과를 확인하세요.':b===1?'조립 셀 수와 셀당 필요한 인력을 함께 확인하세요.':'다른 공정의 증설보다 이 공정의 처리조건을 먼저 확인하세요.'}`:'<strong>현재 발주량에서 대기가 거의 없습니다.</strong> 설비를 늘리기 전에 발주량과 공정시간을 함께 확인하세요.';
+ $('bottleneck-note').innerHTML=result.avgWait[b]>.25?`<strong>${LABELS[b]} 대기가 가장 깁니다.</strong> 평균 ${fmt(result.avgWait[b],1)}가동일 대기 · ${b===1&&result.capacity[1]<result.config.lines?`인력 부족으로 조립 셀 ${result.config.lines-result.capacity[1]}개가 가동되지 않습니다.`:b===3?'챔버 수와 동시 시험 수량을 조정해 효과를 확인하세요.':b===1?'조립 셀 수와 셀당 필요한 인력을 함께 확인하세요.':'다른 공정의 증설보다 이 공정의 처리조건을 먼저 확인하세요.'}`:'<strong>현재 발주량에서 대기가 거의 없습니다.</strong> 설비를 늘리기 전에 발주량과 공정시간을 함께 확인하세요.';
+ renderTwin(shot);
 }
+
+// ---- Digital twin overlays: what is selected, which spacecraft the tracker follows, and the glass cards. ----
+let twin=null,selection={type:'station',s:null},trackedId=null,trackedPinned=false,listTab='stations',lastTwinDay=day;
+const STATUS={bottleneck:'병목',full:'풀가동',running:'가동 중',idle:'유휴'};
+const svg=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICON={
+ clock:svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),inbox:svg('<path d="M12 3v11m0 0-4-4m4 4 4-4"/><path d="M4 14v5h16v-5"/>'),
+ cycle:svg('<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/>'),rocket:svg('<path d="M12 2c3 2.2 5 6 5 10l-2 4H9l-2-4c0-4 2-7.8 5-10z"/><circle cx="12" cy="10" r="2"/><path d="M9 16l-2 4m8-4 2 4"/>'),
+ sat:svg('<rect x="9" y="9" width="6" height="6" rx="1"/><path d="M3 10h5v4H3zM16 10h5v4h-5zM12 9V5"/>'),
+ stage:[svg('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>'),svg('<path d="M14.5 6.5a4 4 0 0 0-5 5L4 17l3 3 5.5-5.5a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"/>'),svg('<path d="M3 12h4l2-5 4 10 2-5h6"/>'),svg('<path d="M10 14V5a2 2 0 1 1 4 0v9a4 4 0 1 1-4 0z"/>'),svg('<path d="M12 2c3 2.2 5 6 5 10l-2 4H9l-2-4c0-4 2-7.8 5-10z"/><path d="M9 16l-2 4m8-4 2 4"/>')]
+};
+const setHTML=(el,html)=>{if(el._html!==html){el.innerHTML=html;el._html=html;}};
+const dayText=d=>`D+${fmt(d,1)}`;
+const defaultStation=()=>result.avgWait[result.bottleneck]>.25?result.bottleneck:1;
+const selectedStation=()=>selection.s??defaultStation();
+function select(sel,{fly=true}={}){
+ if(sel.type==='sat'){
+  if(!(sel.id>=1&&sel.id<=result.jobs.length))return toast('해당 번호의 위성이 없습니다.');
+  trackedId=sel.id;trackedPinned=true;
+ }
+ selection=sel;
+ twin?.select(sel.type==='station'?{type:'station',s:selectedStation()}:sel,{fly});
+ renderFlow();
+}
+function satRow(id){
+ const st=satelliteStatus(result.jobs[id-1],day);
+ const right=st.phase==='active'?`<span class="mini-bar"><b style="width:${st.progress*100}%"></b></span><span class="pill ${st.retry?'bottleneck':'running'}">${Math.round(st.progress*100)}%</span>`:`<span class="pill ${day-st.since>10?'bottleneck':'wait'}">대기 ${fmt(day-st.since,1)}일</span>`;
+ return `<button type="button" class="sat-row" data-sat="${id}"><span class="sat-ico ${st.phase}">${ICON.sat}</span><span class="sat-id">${satName(id)}${st.retry?'<em class="tag">재작업</em>':''}<small>${LABELS[st.stage]}</small></span>${right}</button>`;
+}
+function stationPanel(s,shot){
+ const st=shot.stages[s],status=stationStatus(result,shot,s),seats=s===3?result.config.chambers*result.config.batch:result.capacity[s];
+ const ids=[...st.active.map(a=>a.id),...st.queue].slice(0,6);
+ return `<div class="panel-head"><span class="panel-ico">${ICON.stage[s]}</span><div><small>STATION 0${s+1}</small><h3>${LABELS[s]}</h3></div><span class="pill ${status}">${STATUS[status]}</span></div>
+<p class="panel-sub">${capText(s)}</p>
+<div class="kpis"><div><small>작업 중</small><strong>${st.active.length}<em>/ ${seats}</em></strong><i class="bar"><b style="width:${Math.min(100,st.active.length/Math.max(1,seats)*100)}%"></b></i></div><div><small>대기</small><strong>${st.queue.length}<em>기</em></strong><i class="bar warn"><b style="width:${Math.min(100,st.queue.length/12*100)}%"></b></i></div><div><small>연간 가동률</small><strong>${fmt(result.util[s]*100)}<em>%</em></strong></div><div><small>평균 대기</small><strong>${fmt(result.avgWait[s],1)}<em>일</em></strong></div></div>
+<div class="list-head"><span>현재 위성</span><span>${st.active.length+st.queue.length}기</span></div>
+${ids.length?ids.map(satRow).join(''):'<p class="empty">지금 이 공정에 있는 위성이 없습니다.</p>'}`;
+}
+function satPanel(id){
+ const job=result.jobs[id-1],st=satelliteStatus(job,day);
+ const [label,cls]=st.phase==='pending'?['투입 전','idle']:st.phase==='shipped'?['출하 완료','done']:st.phase==='queue'?['대기 중','wait']:st.retry?['재작업 중','bottleneck']:['작업 중','running'];
+ const where=st.phase==='pending'?`${dayText(job.release)} 투입 예정`:st.phase==='shipped'?`${dayText(job.done)} 출하`:`${LABELS[st.stage]} · ${st.phase==='active'?'처리 중':'대기열'}`;
+ const progress=st.phase==='active'?`<div class="progress"><div><span>공정 진행</span><strong>${Math.round(st.progress*100)}%</strong></div><i class="bar"><b style="width:${st.progress*100}%"></b></i><small>남은 ${fmt(st.end-day,1)}가동일</small></div>`:'';
+ const late=job.done>result.year;
+ const kv=[['투입',dayText(job.release)],[st.phase==='queue'?'대기 시작':'공정 시작',st.phase==='active'?dayText(st.start):st.phase==='queue'?dayText(st.since):'—'],['누적 대기',`${fmt(cumulativeWait(job,day),1)}일`],[st.phase==='shipped'?'출하':'출하 예정',`${dayText(job.done)}${late?' <em class="tag warn">연말 이월</em>':''}`],['재작업',job.segments.some(s=>s.retry&&s.start<=day)||st.retry?'<em class="tag">조립 재작업 1회</em>':'없음']];
+ return `<div class="panel-head"><span class="panel-ico">${ICON.sat}</span><div><small>SATELLITE</small><h3>${satName(id)}</h3></div><span class="pill ${cls}">${label}</span></div>
+<p class="panel-sub">${where}</p>${progress}
+<dl class="kv">${kv.map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+<button type="button" class="text-link" data-station="${st.stage??0}">← ${LABELS[st.stage??0]} 공정 보기</button>`;
+}
+function trackerShell(){
+ return `<div class="tracker-head"><span class="panel-ico">${ICON.sat}</span><strong>위성 추적</strong><button type="button" class="tracker-id" data-sat=""></button><span class="tracker-mode"></span><button type="button" class="text-link tracker-unpin" hidden>자동 추적으로</button></div>
+<div class="tracker-body"><ol class="steps">${LABELS.map((label,s)=>`<li class="step" data-state="upcoming"><span class="step-dot">${ICON.stage[s]}</span><span class="step-label">${label}</span><span class="step-time"></span><em class="step-tag" hidden>재작업</em></li>`).join('')}</ol><div class="tracker-eta"></div></div><p class="empty tracker-empty" hidden>모든 위성이 출하되었습니다.</p>`;
+}
+function renderTracker(){
+ const el=$('twin-tracker');
+ if(!el.firstChild)el.innerHTML=trackerShell();
+ const empty=!trackedId;
+ el.querySelector('.tracker-body').hidden=empty;el.querySelector('.tracker-empty').hidden=!empty;
+ el.querySelector('.tracker-unpin').hidden=!trackedPinned;
+ el.querySelector('.tracker-mode').textContent=trackedPinned?'선택 고정':'자동 추적';
+ if(empty)return;
+ const job=result.jobs[trackedId-1],{status,steps}=trackingSteps(job,day);
+ const idBtn=el.querySelector('.tracker-id');idBtn.textContent=satName(trackedId);idBtn.dataset.sat=trackedId;
+ el.querySelectorAll('.step').forEach((li,i)=>{
+  const step=steps[i];
+  if(li.dataset.state!==step.state)li.dataset.state=step.state;
+  li.querySelector('.step-time').textContent=step.state==='done'?dayText(step.time):step.state==='current'?(status.phase==='active'?`진행 ${Math.round(status.progress*100)}%`:`대기 ${fmt(day-status.since,1)}일`):`예정 ${dayText(step.time)}`;
+  li.querySelector('.step-tag').hidden=!step.rework;
+ });
+ const shipped=status.phase==='shipped',pend=status.phase==='pending';
+ setHTML(el.querySelector('.tracker-eta'),`<small>${shipped?'출하 완료':pend?'투입 예정':'예정 출하'}</small><strong>${dayText(pend?job.release:job.done)}</strong><span>${shipped?`제작기간 ${fmt(job.done-job.release,1)}일`:pend?`출하 예정 ${dayText(job.done)}`:`남은 ${fmt(job.done-day,1)}일`}</span>${job.done>result.year&&!shipped?'<em class="tag warn">연말 이월</em>':''}`);
+}
+function renderList(shot){
+ const active=[],queued=[];
+ shot.stages.forEach(st=>{active.push(...st.active.map(a=>a.id));queued.push(...st.queue);});
+ const since=id=>satelliteStatus(result.jobs[id-1],day).since;
+ const tabs=[['stations','공정',5],['active','작업 중',active.length],['queue','대기',queued.length]];
+ const rows=listTab==='stations'?LABELS.map((label,s)=>{
+  const st=shot.stages[s],status=stationStatus(result,shot,s);
+  return `<button type="button" class="list-row" data-station="${s}"><span class="num">0${s+1}</span><span class="name">${label}<small>작업 ${st.active.length} · 대기 ${st.queue.length}</small></span><span class="pill ${status}">${STATUS[status]}</span></button>`;
+ }).join(''):(listTab==='active'?active.sort((a,b)=>satelliteStatus(result.jobs[b-1],day).progress-satelliteStatus(result.jobs[a-1],day).progress):queued.sort((a,b)=>since(a)-since(b))).slice(0,6).map(satRow).join('')||'<p class="empty">해당하는 위성이 없습니다.</p>';
+ setHTML($('twin-list'),`<div class="tabs" role="tablist" aria-label="공장 현황 목록">${tabs.map(([key,label,n])=>`<button type="button" role="tab" data-tab="${key}" aria-selected="${listTab===key}">${label}<b>${n}</b></button>`).join('')}</div><div class="tab-body" role="tabpanel">${rows}</div>`);
+}
+function renderTwin(shot){
+ if(trackedPinned&&trackedId>result.jobs.length)trackedPinned=false;
+ if(selection.type==='sat'&&selection.id>result.jobs.length)selection={type:'station',s:null};
+ if(!trackedPinned)trackedId=pickTracked(result,day,trackedId);
+ const pct=shot.completed/result.config.demand*100;
+ setHTML($('twin-chips'),`<div class="chip"><span class="chip-ico">${ICON.clock}</span><div><small>가동일</small><strong>D+${fmt(day)}</strong><em>/ 250</em></div></div><div class="chip"><span class="chip-ico">${ICON.inbox}</span><div><small>투입</small><strong>${shot.released}</strong><em>기</em></div></div><div class="chip"><span class="chip-ico">${ICON.cycle}</span><div><small>공정 내</small><strong>${shot.wip}</strong><em>기</em></div></div><div class="chip"><span class="chip-ico">${ICON.rocket}</span><div><small>출하</small><strong>${shot.completed}</strong><em>/ ${result.config.demand}</em><i class="chip-bar"><b style="width:${pct}%"></b></i></div></div>`);
+ setHTML($('twin-panel'),selection.type==='sat'?satPanel(selection.id):stationPanel(selectedStation(),shot));
+ renderTracker();renderList(shot);
+ const live=$('live-pill');live.querySelector('span').textContent=`D+${fmt(day)}`;live.classList.toggle('playing',playing);
+ // Small steps glide; scrubbing the timeline or reloading a scenario jumps.
+ twin?.update({result,shot,day,snap:Math.abs(day-lastTwinDay)>4.5,station:selection.type==='station'?selectedStation():null});
+ lastTwinDay=day;
+}
+$('twin').addEventListener('click',e=>{
+ const t=e.target.closest('[data-sat],[data-station],[data-tab],[data-action],.tracker-unpin');
+ if(!t)return;
+ if(t.classList.contains('tracker-unpin')){trackedPinned=false;if(selection.type==='sat')selection={type:'station',s:null};twin?.select({type:'station',s:selectedStation()},{fly:false});renderFlow();return;}
+ if(t.dataset.sat)return select({type:'sat',id:Number(t.dataset.sat)});
+ if(t.dataset.station)return select({type:'station',s:Number(t.dataset.station)});
+ if(t.dataset.tab){listTab=t.dataset.tab;return renderFlow();}
+ const action=t.dataset.action;
+ if(action==='zoom-in')twin?.zoom(.72);
+ if(action==='zoom-out')twin?.zoom(1.38);
+ if(action==='reset'){twin?.resetView();}
+ if(action==='rotate'&&twin)t.setAttribute('aria-pressed',String(twin.toggleRotate()));
+ if(action==='fullscreen'){if(document.fullscreenElement)document.exitFullscreen();else $('twin').requestFullscreen?.().catch(()=>toast('전체 화면을 사용할 수 없습니다.'));}
+});
+const pickStage=e=>{const card=e.target.closest('.stage');if(card)select({type:'station',s:Number(card.dataset.stage)});};
+$('flow-stages').addEventListener('click',pickStage);
+$('flow-stages').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pickStage(e);}});
+$('sat-search').addEventListener('submit',e=>{
+ e.preventDefault();
+ const id=Number(($('sat-search-input').value.match(/\d+/)||[])[0]);
+ if(!id||id>result.jobs.length)return toast(`1~${result.jobs.length} 사이 위성 번호를 입력하세요.`);
+ select({type:'sat',id});
+ const r=$('twin').getBoundingClientRect();if(r.bottom<0||r.top>innerHeight)$('twin').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});
+});
 function chart(){
  const W=530,H=230,L=39,R=16,T=12,B=31,max=Math.ceil(Math.max(config.demand,baseline.demand,result.shipments,baseResult.shipments)/40)*40;
  const x=i=>L+i*(W-L-R)/12,y=v=>H-B-v/max*(H-T-B);
@@ -192,6 +317,15 @@ $('download').addEventListener('click',exportCSV);
 function resultSummary(){return {config:{...config},baseline:{...baseline},annualShipments:result.shipments,averageLeadDays:result.shipments?result.lead:null,unitCostBillionKRW:result.cost===null?null:result.cost/10,lastShipmentWorkingDay:result.finish,bottleneck:LABELS[result.bottleneck],snapshot:snapshot(result,day)};}
 async function readLatestResult(){let observed;do{observed=pending;await observed;}while(observed!==pending);return resultSummary();}
 syncControls();render();
+// The 3D view is optional: if WebGL or the module is unavailable the overlays and stage cards still work.
+import('./twin.mjs').then(({createTwin})=>{
+ twin=createTwin($('twin-stage'),{onSelect:select});
+ twin.select({type:'station',s:selectedStation()},{fly:false});
+ lastTwinDay=Infinity;renderFlow();
+}).catch(error=>{
+ console.warn('3D digital twin unavailable:',error);
+ $('twin').classList.add('no-webgl');$('twin-fallback').hidden=false;
+});
 const context=document.modelContext;
 if(context?.registerTool){
  const lifecycle=new AbortController();
