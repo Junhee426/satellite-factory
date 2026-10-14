@@ -11,10 +11,14 @@ for(const match of html.matchAll(/(?:src|href)=["'](\.\/[^"']+)["']/g)){
 for(const file of readdirSync(dist).filter(f=>f.endsWith('.mjs'))){
  const full=resolve(dist,file),source=readFileSync(full,'utf8');
  execFileSync(process.execPath,['--check',full],{stdio:'inherit'});
- for(const m of source.matchAll(/(?:from\s*|new URL\()\s*['"](\.\/[^'"]+)['"]/g)){
+ // Dynamic import() is included: the 3D twin loads that way so the app survives its absence.
+ for(const m of source.matchAll(/(?:from\s*|new URL\(|import\()\s*['"](\.\/[^'"]+)['"]/g)){
   if(!existsSync(resolve(dist,m[1])))throw new Error(`Missing module: ${m[1]}`);
  }
 }
+const vendor=resolve(dist,'vendor/three-bundle.mjs');
+if(!/@license[\s\S]{0,120}MIT/.test(readFileSync(vendor,'utf8').slice(0,400)))throw new Error('Vendored three.js bundle must keep its MIT license header');
 execFileSync(process.execPath,[resolve(root,'tests/model.test.mjs')],{stdio:'inherit'});
 execFileSync(process.execPath,[resolve(root,'tests/simulation-client.test.mjs')],{stdio:'inherit'});
+execFileSync(process.execPath,[resolve(root,'tests/twin-state.test.mjs')],{stdio:'inherit'});
 console.log('Render static package verified. Publish directory: dist');
